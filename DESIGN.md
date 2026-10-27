@@ -4,6 +4,49 @@
 
 User decisions as of 2026-10-27: Ollama for now; Calendar reads and individually confirmed
 event additions. Preserve existing features and Google authorization settings.
+The user subsequently approved Tasks first, Drive next, and `TODO.md` after approving
+the independent review. Gmail/digests/deployment remain future work.
+
+Tasks: `main.py` registers authorized `/task`, `/tasks`, and `task_add`/`task_skip`
+callbacks through `handlers/tasks.py`. `Task:` bypasses Ollama; classified task
+captures use the same preview after SQLite save. Preview uses plain text and shows
+the exact title/original text, default-list target, and absence of due date/reminder.
+Confirmation atomically consumes `pending_task_<capture ID>` before awaiting Google.
+Skip and missing/restarted previews never insert. Worker-based calls, no insert retries,
+and sanitized uncertain-outcome messages follow the Calendar safety pattern.
+`handlers/google/tasks.py` uses Tasks v1, `@default`, bounded HTTP transport, and
+paginated open-task reads (display limit 20). It has no edit/delete/complete methods.
+`tasks_auth.py` requests only the required Tasks scope, separately from unchanged
+Calendar `SCOPES`; only `auth_tasks.py` opts into browser consent. New setup uses
+exclusive token creation; runtime may refresh only the separate Tasks token. Path
+equality/hardlink checks reject protected-file aliases before loading. Existing bad
+Tasks tokens are never replaced with new consent automatically.
+
+Drive: authorized `/drive` and `Drive:` / `Save to Drive:` capture paths bypass
+Ollama, save locally, and preview the full content/filename/folder in plain text.
+`handlers/drive.py` consumes each pending save before any await, then calls
+`handlers/google/drive.py` in a worker only after Save. The adapter uses Drive v3
+with separate `drive.file` authorization, creates/reuses app-tagged owned folders
+in My Drive (Noah Inbox → Links/Notes), and uploads original UTF-8 text with a
+nonresumable multipart create. It never retrieves link contents or changes sharing.
+Folder lookups paginate and reject duplicate/invalid metadata; every create uses
+zero application retries. A partial multi-step save can leave folders or a file;
+uncertain outcomes must be checked privately before a fresh request. `auth_drive.py`
+is the sole explicit consent entry point, with separate `tokens/drive.json` and
+exclusive new-file creation. It refuses aliases to Calendar/Tasks/client files.
+
+Photos: `filters.PHOTO` routes to authorized `handlers/photos.py`. Local capture
+stores type=image and caption/category metadata, not image bytes or Telegram file
+IDs. In-memory pending state holds the highest-resolution Telegram file ID and the
+exact proposed destination. A cached-photo reply supplies the preview. Only an
+authorized Upload callback consumes it and downloads bytes with Telegram timeouts.
+The 10 MiB-limited buffer is uploaded by worker to Drive as image/jpeg, under
+Noah Inbox/Images and an optional explicit caption category. Buffer references are
+released after the operation; there is no claim of forensic memory erasure. The
+adapter never changes sharing or updates files. No visual classifier is involved;
+configured Ollama metadata reports no vision support. Caption/category/uncertainty
+rules and setup are documented in README. Text previews/results disable Telegram
+link previews, so bot-generated previews do not request website previews.
 
 ```text
 Telegram long polling
@@ -34,7 +77,8 @@ Telegram long polling
   `qwen3:4b`; `think: false`. Connection/read timeouts: 5/120 seconds. The capture
   handler runs classification via `asyncio.to_thread` to avoid blocking the event loop.
   Schema types: note/link/event/task/query/image; all-day dates use `YYYY-MM-DD`.
-  Image is a schema value; the bot currently accepts text only. No OpenAI client is used.
+  The classifier accepts text only; Telegram photos use the separate confirmed
+  Drive-upload flow without visual analysis. No OpenAI client is used.
 - `dates.py`: shared configured-local clock, deterministic English/ISO date resolution,
   date/week bounds, and timezone validation. The classifier receives a snapshot of the
   current local date/time; model-generated event dates are replaced by validated input
@@ -115,12 +159,14 @@ this repository's index. A Git error or unsafe in-repository override fails safe
 | Calendar | Read primary Calendar; create only after explicit per-event Add |
 | Authorization | Preserve existing `calendar.events.owned` request and local settings |
 | Timezone | `America/New_York` by default; configurable |
-| Future services | Tasks/Gmail/Drive/digest require approval; no new scopes now |
+| Demo services | Tasks create/list and confirmed Drive text/link exports implemented |
+| Future services | Gmail/digest/deployment still require approval |
 
 The original project instructions proposed `tasks`, `gmail.readonly`, `gmail.send`, and
-`drive.file` for future work. These are proposals, not requested scopes in current code.
+`drive.file` for future work. Tasks now requests its approved scope in a separate flow;
+Drive now requests only `drive.file` in its own flow; Gmail scopes remain proposals.
 Gmail would require full-draft preview and explicit Send/Edit/Cancel; Tasks/Calendar
-modifications require confirmation. Drive/digest ordering remains proposed in `PROJECT_BRIEF.md`.
+modifications require confirmation. The demo priority is Tasks, then Drive; digest remains future.
 
 ## Data and input safety
 
@@ -147,7 +193,8 @@ acceptance, or full rendering/privacy coverage. No Google authorization settings
 The relative-date change adds fixed-clock tests for current-time prompt grounding,
 deterministic capture/query resolution, clarification follow-ups and expiry, midnight,
 week/year/leap boundaries, 23/25-hour days and 167/169-hour weeks, DST gaps/folds, and
-matching preview/API times across DST. The latest suite result is 216 passing tests.
+matching preview/API times across DST. The latest demo suite result is 374 passing
+offline tests, including confirmed Tasks/Drive/photo flows and state isolation.
 No live service calls were made for this relative-date change.
 
 The six review fixes add mocked authorization/setup/refresh tests, component-preserving

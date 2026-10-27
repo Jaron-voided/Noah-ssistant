@@ -41,7 +41,7 @@ established end to end by this documentation task; mocked test evidence is liste
 
 ## Tests actually run
 
-On 2026-10-27, the latest suite passed: **216 passed in 3.30s** with
+Before the demo additions on 2026-10-27, the suite passed: **216 passed in 3.30s** with
 `python -m pytest -q -W error::RuntimeWarning --tb=short --show-capture=no`.
 Dummy process settings were supplied for all eight configuration variables; external
 service calls were mocked. The earlier timeout/confirmation change finished with 78
@@ -158,5 +158,67 @@ accuracy for arbitrary text or latency under load.
    for that event. Never infer approval from a capture or this validation plan.
 5. Record actual outcomes separately from mocked evidence; leave unperformed checks open.
 
-Tasks, Gmail, Drive, digests, and deployment acceptance criteria must be agreed before
-their implementation. The proposed roadmap in `PROJECT_BRIEF.md` is not implementation approval.
+## Approved Tasks demo addition (2026-10-27)
+
+The user approved Tasks first and Drive next after approving the independent review.
+Tasks implemented: Telegram capture → local SQLite save → exact plain-text preview →
+explicit Add to Google Tasks / Skip; deterministic `/task` and `Task:`; `/tasks` and
+supported list phrases for the default list. No due date/reminder, edit/delete/complete,
+or other-list aggregation is implemented. Calendar settings remain unchanged.
+
+- [x] Mocked authorization checks: unauthorized/missing-user messages, commands,
+      and callbacks do not read/write Google or SQLite, reply, or consume a preview.
+- [x] Mocked preview/Add/Skip, duplicate/overlapping taps, uncertain outcomes,
+      cancellation/restart, reply failure, worker responsiveness and pagination.
+- [x] Separate Tasks scope/token; explicit, import-safe setup only; missing/bad grants
+      cannot launch implicit OAuth; setup cannot replace an existing token. Tests
+      use fictional protected-file sentinels and verify they remain unchanged.
+- [x] Full offline suite: **266 passed in 4.34s**. All nine settings were fictional,
+      dotenv disabled, service/browser access blocked, no bytecode/pytest cache writes.
+- [x] Independent Tasks review: no blocking finding; subsequent OAuth prompt
+      suppression and Drive-token alias protection separately verified by reviewer.
+- [ ] User-run Google Tasks consent, API enablement, confirmed creation and listing.
+- [ ] Live Calendar regression and Telegram unauthorized/repeated-tap checks.
+
+No live Google/Telegram/Ollama calls were made for this addition. Separate token files
+protect local storage but do not imply separate Google app/account grants. Google Tasks
+requires the Tasks write scope, which is broader than the create/list operations exposed
+by Noah. After an uncertain insertion, inspect Tasks privately before resending.
+Gmail, digests and deployment remain future work requiring approval.
+
+## Drive and photo demo additions (2026-10-27)
+
+- [x] Explicit text/link export: local capture, full preview, Save/Skip, app-owned
+      tagged Noah Inbox/Links or Notes folders, new UTF-8 text files; no URL fetch,
+      file update/delete or sharing change.
+- [x] Drive uses only `drive.file` and its separate token/explicit setup flow.
+      Mocked sentinel tests preserve Calendar/Tasks/client files and scopes.
+- [x] Separate Drive reviewer: 321 offline tests passed. One P2 finding (Telegram
+      link previews were not disabled) was accepted and fixed; regression assertions
+      check disabled previews on text/Tasks previews and Drive result links.
+- [x] Independent Drive reviewer verified disabled link previews and canonical folder
+      names; 162 focused checks plus supplemental mocked assertions passed.
+- [x] Telegram photos recognized as image captures; cached photo preview; no bytes
+      downloaded/uploaded until explicit Upload. Skip retains only local metadata.
+- [x] Images folder with explicit caption categories; missing/conflicting categories
+      stay in Images. Size/full-preview limits and safe caption/filename rendering.
+- [x] Mocked unauthorized users/callbacks, repeated/overlapping confirmations,
+      running-worker cancellation, download/upload failures, buffer cleanup,
+      preview/reply failures, restart-expired buttons, exact payload/folders/no retries.
+- [x] Latest full offline suite: **374 passed in 6.78s**. All ten settings fictional;
+      dotenv/service/browser access disabled, no bytecode/pytest cache writes.
+      Ordinary pytest now also overrides inherited settings and disables dotenv.
+- [x] Independent photo review: 368 passed in 6.32s; no blocking finding. The stale
+      text-only documentation was corrected; combined-state, real PTB filter and
+      hardlink tests closed verification gaps. Reviewer follow-up: 92 passed in
+      1.99s, nothing skipped. No runtime code changed after the reviewed parser.
+- [ ] User-run Drive consent, live text/photo uploads, rendering, repeated taps
+      and private inspection of resulting files. No live writes were run by the agent.
+
+Live read-only checks: configured loopback Ollama `/api/show` metadata reported
+completion but no vision. No photo input was sent, no model changed. The credential
+audit checked effective path metadata and filenames in the one locally reachable
+Git commit; all configured files were ignored/untracked, and no private filename
+history match was found. Credentials/tokens were never opened. Local JSON storage
+has no application-level encryption/secrets-manager integration; host ACLs/backups
+and effective grants were not inspected. See README for scope and audit limits.

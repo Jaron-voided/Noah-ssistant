@@ -1,12 +1,27 @@
 import os
+import tempfile
+import uuid
+from pathlib import Path
+from unittest.mock import patch
 
-# Set dummy values before any module that reads config.py is imported.
-# Tests that need specific values override via monkeypatch.
-os.environ.setdefault("TELEGRAM_BOT_TOKEN", "1234567890:AAtest_token_for_pytest_only")
-os.environ.setdefault("TELEGRAM_USER_ID", "12345")
-os.environ.setdefault("GOOGLE_CREDENTIALS_FILE", "credentials.json")
-os.environ.setdefault("GOOGLE_TOKEN_FILE", "token.json")
-os.environ.setdefault("TIMEZONE", "America/New_York")
-os.environ.setdefault("DB_PATH", "noah_test.db")
-os.environ.setdefault("OLLAMA_URL", "http://localhost:11434")
-os.environ.setdefault("OLLAMA_MODEL", "qwen3:4b")
+# Override inherited configuration and disable .env before importing application
+# modules. Ordinary pytest must not read private local config or use live settings.
+# Tests needing other values override config attributes with monkeypatch.
+_run_dir = Path(tempfile.gettempdir()) / ("noah-fictional-tests-" + str(uuid.uuid4()))
+_environment = patch.dict(os.environ, {
+    "TELEGRAM_BOT_TOKEN": "123456:dummy-test-token", "TELEGRAM_USER_ID": "12345",
+    "GOOGLE_CREDENTIALS_FILE": str(_run_dir / "no-credentials.json"),
+    "GOOGLE_TOKEN_FILE": str(_run_dir / "no-calendar-token.json"),
+    "GOOGLE_TASKS_TOKEN_FILE": str(_run_dir / "no-tasks-token.json"),
+    "GOOGLE_DRIVE_TOKEN_FILE": str(_run_dir / "no-drive-token.json"),
+    "TIMEZONE": "America/New_York", "DB_PATH": str(_run_dir / "fictional.db"),
+    "OLLAMA_URL": "http://localhost:11434", "OLLAMA_MODEL": "qwen3:4b",
+})
+_dotenv = patch("dotenv.load_dotenv", return_value=False)
+_environment.start()
+_dotenv.start()
+
+
+def pytest_unconfigure(config):
+    _dotenv.stop()
+    _environment.stop()

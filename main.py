@@ -15,6 +15,9 @@ import config
 from db.store import init_db
 from handlers import capture as capture_handler
 from handlers import query as query_handler
+from handlers import tasks as tasks_handler
+from handlers import drive as drive_handler
+from handlers import photos as photos_handler
 from handlers.auth_guard import auth
 from handlers.calendar_confirm import handle_callback
 
@@ -37,6 +40,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Commands:\n"
         "/today — today's calendar\n"
         "/week  — next 7 days\n"
+        "/task <text> — preview a Google Task\n"
+        "/tasks — open tasks in your default list\n"
+        "/drive <text or link> — preview a Drive save\n"
+        "Send a photo — preview a confirmed Drive upload; caption meme or fitness to sort\n"
         "/help  — this message"
         "\nFind <keywords> — search saved captures"
     )
@@ -64,8 +71,15 @@ def main() -> None:
     app.add_handler(CommandHandler("help", cmd_start))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("week", cmd_week))
+    app.add_handler(CommandHandler("task", tasks_handler.command_add))
+    app.add_handler(CommandHandler("tasks", tasks_handler.command_list))
+    app.add_handler(CommandHandler("drive", drive_handler.command_add))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
+    app.add_handler(MessageHandler(filters.PHOTO, photos_handler.handle_photo))
     app.add_handler(CallbackQueryHandler(handle_callback, pattern=r"^cal_(add|skip):"))
+    app.add_handler(CallbackQueryHandler(tasks_handler.handle_callback, pattern=r"^task_(add|skip):"))
+    app.add_handler(CallbackQueryHandler(drive_handler.handle_callback, pattern=r"^drive_(add|skip):"))
+    app.add_handler(CallbackQueryHandler(photos_handler.handle_callback, pattern=r"^photo_(add|skip):"))
     log.info("Noah is running (long polling) — authorized user: %d", config.TELEGRAM_USER_ID)
     # Python 3.14 no longer creates the loop expected by python-telegram-bot 21.6.
     with asyncio.Runner() as runner:

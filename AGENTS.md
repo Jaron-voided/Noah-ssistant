@@ -11,11 +11,12 @@ work; inspect the working tree and make only changes within the requested scope.
   existing working features and Google authorization settings.
 - Noah remains a single-user, Telegram-first Python assistant using SQLite and
   long polling, with `America/New_York` as the default timezone.
-- Current scope is local capture, Calendar reads, and confirmed event additions.
-  Tasks, Gmail, Drive, daily digests/APScheduler, webhooks, VPS deployment, and
-  Calendar modification/deletion require separate approval. Current scope is
+- Current scope includes local capture, Calendar reads, confirmed event additions,
+  and (approved 2026-10-27) Google Tasks first and Google Drive next. Gmail,
+  daily digests/APScheduler, webhooks, VPS deployment, and Calendar
+  modification/deletion require separate approval. Current scope is
   not a declaration that milestone acceptance is complete.
-- Do not create `TODO.md` until an independent review is completed and approved.
+- The independent review and creation of `TODO.md` were approved on 2026-10-27.
 - Preserve the non-goals in `PROJECT_BRIEF.md`: no multi-user support, public web
   UI, full task-manager replacement, autonomous email triage, or non-Google
   service integrations in v1.
@@ -33,6 +34,21 @@ work; inspect the working tree and make only changes within the requested scope.
 - Normal Calendar calls may reuse/refresh existing grants but must never launch
   interactive OAuth. Only the explicitly invoked `auth_google.py` setup flow may
   opt in. Private repository-local paths must be ignored and untracked before use.
+- Tasks require explicit **Add to Google Tasks** on each preview. Only
+  `auth_tasks.py` may opt into Tasks consent, requesting `https://www.googleapis.com/auth/tasks`
+  and storing a separate `GOOGLE_TASKS_TOKEN_FILE` (default `tokens/tasks.json`).
+  Never alias Calendar credentials/token; setup must not replace existing token files.
+  Tasks currently create/list in the default list without setting due dates/reminders.
+- Drive exports require explicit **Save to Google Drive** on a full preview,
+  including any new Noah Inbox/Links/Notes folders. Only `auth_drive.py` may opt into
+  `drive.file` consent, using separate `GOOGLE_DRIVE_TOKEN_FILE` (`tokens/drive.json`).
+  Never alias other token/credential files, fetch links, change sharing, or update
+  arbitrary existing Drive files. Text/link exports are new plain-text files.
+  Confirmed Telegram photo uploads are also approved: preview the cached photo,
+  then download/upload only after explicit Upload. Store only caption/category
+  metadata locally, never photo bytes in SQLite or on disk. Use Images and explicit
+  caption categories; unclear captions stay in Images. Do not infer categories from
+  visual content with the current text-only Ollama model. Current photo limit: 10 MiB.
 - Use parameterized SQLite statements; never interpolate untrusted data into SQL.
 - Treat Telegram text/captions/forwarded content, links, email subjects, and event
   titles as untrusted. Never execute them via `eval`, `exec`, `subprocess`, or
@@ -44,10 +60,12 @@ work; inspect the working tree and make only changes within the requested scope.
 - Future approved Calendar/Tasks modifications also require confirmation. Gmail
   send must show the full draft and require explicit **Send** before the API call;
   retain Edit/Cancel choices. Never bypass confirmation.
-- Code currently requests only
+- Calendar code requests only
   `https://www.googleapis.com/auth/calendar.events.owned`. This documents the
   requested scope, not the contents or grants of an existing token. Do not change
-  it or broaden scopes. Future Tasks/Gmail/Drive scopes need explicit approval.
+  it or broaden Calendar scopes. Tasks/Drive must use separate token files and
+  explicit setup/consent; never overwrite Calendar credentials or its token.
+  Determine/document minimum scopes. Gmail scopes still need separate approval.
 
 ## Development and validation
 

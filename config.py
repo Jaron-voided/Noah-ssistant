@@ -19,6 +19,8 @@ TELEGRAM_USER_ID: int = int(_require("TELEGRAM_USER_ID"))
 
 GOOGLE_CREDENTIALS_FILE: Path = Path(_optional("GOOGLE_CREDENTIALS_FILE", "credentials.json"))
 GOOGLE_TOKEN_FILE: Path = Path(_optional("GOOGLE_TOKEN_FILE", "token.json"))
+GOOGLE_TASKS_TOKEN_FILE: Path = Path(_optional("GOOGLE_TASKS_TOKEN_FILE", "tokens/tasks.json"))
+GOOGLE_DRIVE_TOKEN_FILE: Path = Path(_optional("GOOGLE_DRIVE_TOKEN_FILE", "tokens/drive.json"))
 
 TIMEZONE: str = _optional("TIMEZONE", "America/New_York")
 DB_PATH: Path = Path(_optional("DB_PATH", "noah.db"))

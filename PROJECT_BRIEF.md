@@ -25,15 +25,24 @@ scope; it does not approve unrelated future milestones or declare acceptance com
 | Auth guard | Bot only responds to the authorized Telegram user ID |
 | Confirmation | Each capture echoes back what Noah understood |
 
-## Future features (not approved by the current scope decision)
+## Demo additions and future features
 
-- Google Tasks (read/write, with confirmation before write)
+Update, 2026-10-27: Tasks and Drive planning/implementation are now approved for
+the demo, in that order. Tasks confirmed creation/default-list reads are implemented
+with mocked verification; live consent/demo remains open. Drive's explicit confirmed
+text/link export is also implemented with mocked verification. The digest-first
+recommendation below is historical and superseded by this
+Tasks-then-Drive decision. Gmail and the remaining items still require approval.
+
+- Google Tasks: confirmed creation/default-list reads implemented; further operations planned
 - Gmail read + summarize
 - Gmail send (draft shown, explicit [Send / Edit / Cancel] required)
-- Google Drive — save long-form notes as Docs; milestone timing unresolved below
+- Google Drive — confirmed text/link exports into Noah Inbox/Links or Notes implemented;
+  native Docs export and broader organization remain planned
 - Daily digest at 8am ET: today's events, open tasks, recent captures
 - Rich natural-language retrieval (basic keyword/LIKE retrieval already exists)
-- Image capture and description
+- Telegram photo capture and confirmed, caption-sorted Drive upload implemented;
+  automatic visual description/classification and original document uploads planned
 - Webhook mode + VPS deployment
 
 ## Drive and daily-digest milestone conflict
@@ -47,7 +56,7 @@ their disagreement rather than silently adopting one roadmap.
 | Previous `README.md` roadmap | Milestone 3: "Drive integration" | Milestone 3: "Daily digest" |
 | Previous `PROJECT_BRIEF.md` roadmap | Milestone 2: "save long-form notes as Docs" | Milestone 3: "Daily digest at 8am ET" |
 
-Recommended order, pending user approval:
+Historical recommended order (superseded for this demo by Tasks, then Drive):
 
 1. Finish validating the current Ollama/capture/Calendar flow and confirmation gate.
 2. Next milestone: a minimal digest from Calendar and SQLite captures. Establish an
@@ -57,8 +66,9 @@ Recommended order, pending user approval:
    permissions, and storage behavior. It adds a separate integration and is not a
    prerequisite for a useful Calendar/capture digest.
 
-Tasks/Gmail scheduling and the exact milestone numbers remain undecided. The order above
-is a recommendation, not permission to implement the digest, Drive, or deployment.
+Further Tasks operations, Gmail, scheduling and milestone numbers remain undecided.
+The historical order above does not approve digest/deployment. Drive is now approved
+as the next demo priority after Tasks.
 
 ## Long-term vision
 - Voice notes via Telegram voice messages

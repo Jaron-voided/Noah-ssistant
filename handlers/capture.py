@@ -7,6 +7,8 @@ from db.store import Capture, save
 import dates
 from handlers import date_clarification as clarification
 from handlers import query as query_handler
+from handlers import tasks as tasks_handler
+from handlers import drive as drive_handler
 from handlers.google.calendar import format_iso_dt
 from llm.classifier import Classified, ClassifierError, classify
 
@@ -67,14 +69,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             return
         result = pending["result"]
     else:
-        if query_handler.is_capture_search(text) or dates.calendar_question(text):
-            await query_handler.handle(update, context, text, now=reference)
+        if drive_handler.explicit_content(text) is not None:
+            await drive_handler.command_add(update, context)
             return
-        try:
-            result = await asyncio.to_thread(classify, text, now=reference)
-        except ClassifierError as exc:
-            await update.message.reply_text(f"⚠️ Could not classify your message: {exc}")
+        if tasks_handler.is_list_request(text):
+            await tasks_handler.command_list(update, context)
             return
+        task_text = tasks_handler.explicit_task(text)
+        if task_text is not None:
+            if not task_text:
+                await update.message.reply_text("Use Task: Buy fictional index cards. Nothing added.")
+                return
+            text = task_text
+            result = Classified(type="task", title=text[:1024])
+        else:
+            if query_handler.is_capture_search(text) or dates.calendar_question(text):
+                await query_handler.handle(update, context, text, now=reference)
+                return
+            try:
+                result = await asyncio.to_thread(classify, text, now=reference)
+            except ClassifierError as exc:
+                await update.message.reply_text(f"⚠️ Could not classify your message: {exc}")
+                return
 
         if result.type == "query":
             await query_handler.handle(update, context, text, now=reference)
@@ -100,7 +116,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     row_id = save(capture)
 
-    if result.type == "event" and result.event_dt:
+    if result.type == "task":
+        await tasks_handler.preview(update, context, title=result.title or text[:1024],
+                                    notes=text, row_id=row_id)
+    elif result.type == "event" and result.event_dt:
         context.application.bot_data[f"pending_cal_{row_id}"] = {
             "title": result.title or text[:50],
             "event_dt": result.event_dt,
