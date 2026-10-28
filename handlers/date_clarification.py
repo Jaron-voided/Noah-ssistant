@@ -1,5 +1,6 @@
 """Short-lived, per-user clarification state; no Calendar write authorization."""
 from datetime import timedelta, timezone
+from dates import ClarificationValues
 
 
 KEY = "pending_date_clarification"
@@ -14,8 +15,9 @@ def expired(pending, now):
     return elapsed > timedelta(minutes=10)
 
 
-async def ask(update, context, *, kind, text, now, question, result=None, answer=""):
+async def ask(update, context, *, kind, text, now, question, result=None, values=None):
     context.user_data[KEY] = {
-        "kind": kind, "text": text, "now": now, "result": result, "answer": answer,
+        "kind": kind, "text": text, "now": now, "result": result,
+        "values": values if values is not None else ClarificationValues(),
     }
     await update.message.reply_text(f"{question}\nReply to clarify, or send cancel.")

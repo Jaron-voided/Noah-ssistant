@@ -58,6 +58,75 @@ class DateSpan:
                 localize(datetime.combine(self.end, time())))
 
 
+@dataclass(frozen=True)
+class ClarificationValues:
+    """Latest supplied value for each component, separate from the original input.
+
+    Keep ambiguous values too: they must still prompt, but a later correction
+    replaces that component rather than being appended to it.
+    """
+    date: str = ""
+    clock: str = ""
+    zone: str = ""
+    offset: str = ""
+    iso_clock: bool = False
+
+    def replace_from(self, reply: str) -> "ClarificationValues":
+        day, clock, zone, offset = self.date, self.clock, self.zone, self.offset
+        iso_clock = self.iso_clock
+        stamps = list(_ISO_STAMP.finditer(reply.lower()))
+        if len(stamps) == 1:
+            stamp = stamps[0]
+            # Retain the wall clock and offset independently so date/time replies
+            # can correct either without discarding the other.
+            stamp_text = stamp.group().upper()
+            stamp_day, stamp_clock = re.split(r"[T ]", stamp_text, maxsplit=1)
+            suffix = re.search(r"(Z|[+-]\d{2}:\d{2})$", stamp_clock)
+            offset = suffix.group() if suffix else ""
+            clock = stamp_clock[:suffix.start()] if suffix else stamp_clock
+            iso_clock = True
+            day = reply[:stamp.start()] + stamp_day + reply[stamp.end():]
+            extra_clocks = list(_TIME.finditer((reply[:stamp.start()] + reply[stamp.end():]).lower()))
+            if extra_clocks:
+                clock = stamp_text + " " + " ".join(m.group() for m in extra_clocks)
+                iso_clock = False
+            day = _TIME.sub("", day)
+            zone = ""
+        else:
+            clocks = list(_TIME.finditer(reply.lower()))
+            modes = re.findall(r"\ball[ -]day\b|\bwhole day\b|\bnoon\b|\bmidnight\b", reply, re.I)
+            if clocks or modes:
+                clock = " ".join([m.group() for m in clocks] + modes)
+                iso_clock = False
+            date_reply = re.sub(r"\ball[ -]day\b|\bwhole day\b|\bnoon\b|\bmidnight\b", "", _TIME.sub("", reply), flags=re.I)
+            if has_date_language(date_reply) or _MONTH_DAY.search(date_reply.lower()):
+                day = date_reply
+        zone_pattern = r"\b(?:EST|EDT|PST|PDT|CST|CDT|MST|MDT|UTC|GMT|BST|CET|CEST|IST|JST|AEST|AEDT)\b|\b[A-Za-z_]+/[A-Za-z_]+\b"
+        zones = re.findall(zone_pattern, reply, re.I)
+        if zones:
+            zone = " ".join(zones)
+            if len(stamps) != 1:
+                offset = ""
+        # Zone words belong to their own component, including invalid zones that
+        # must continue asking for clarification until explicitly corrected.
+        day = re.sub(zone_pattern, "", day, flags=re.I)
+        return ClarificationValues(day, clock, zone, offset, iso_clock)
+
+    def answer(self, original: str, now: datetime) -> str:
+        if self.offset or self.iso_clock:
+            # Validate each component before assembling an offset-bearing stamp.
+            week = re.search(r"\b(this|next) week\b", original, re.I)
+            context = _span(week.group(), now) if week else None
+            span = _span(self.date, now, week_context=context) or _span(original, now)
+            try:
+                clock = time.fromisoformat(self.clock) if self.iso_clock else _clock(self.clock)
+            except ValueError:
+                raise ClarificationNeeded("Please give a valid ISO date/time.") from None
+            if span and (span.end - span.start).days == 1 and clock is not None:
+                return f"{span.start.isoformat()}T{clock.isoformat()}{self.offset} {self.zone}".strip()
+        return "\n".join(value for value in (self.date, self.clock, self.zone) if value)
+
+
 _WEEKDAYS = "monday tuesday wednesday thursday friday saturday sunday".split()
 _MONTHS = "january february march april may june july august september october november december".split()
 _ISO_DAY = re.compile(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)")

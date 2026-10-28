@@ -60,12 +60,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("That clarification expired. Please resend the full message.")
         return
 
-    answer = ""
+    values = dates.ClarificationValues()
     if pending:
-        answer = "\n".join(filter(None, [pending["answer"], text]))
+        values = pending["values"].replace_from(text)
         text, reference = pending["text"], pending["now"]
         if pending["kind"] == "query":
-            await query_handler._calendar_query(update, context, text, now=reference, answer=answer)
+            await query_handler._calendar_query(update, context, text, now=reference, values=values)
             return
         result = pending["result"]
     else:
@@ -98,11 +98,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if result.type == "event":
         try:
-            resolved = dates.resolve_event(text, reference, answer=answer)
+            resolved = dates.resolve_event(text, reference, answer=values.answer(text, reference))
         except dates.ClarificationNeeded as exc:
             await clarification.ask(
                 update, context, kind="event", text=text, now=reference,
-                question=str(exc), result=result, answer=answer,
+                question=str(exc), result=result, values=values,
             )
             return
         result = result.model_copy(update={"event_dt": resolved})

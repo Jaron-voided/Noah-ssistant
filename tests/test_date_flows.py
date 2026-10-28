@@ -290,3 +290,69 @@ async def test_iso_event_keeps_clock_when_only_timezone_is_clarified(answer, off
     assert recent()[0]["event_dt"] == "2026-11-01T01:30:00" + offset
     create.assert_not_called()
     assert update.message.reply_text.call_args.kwargs["reply_markup"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["event", "query"])
+@pytest.mark.parametrize("ambiguous, correction, hour", [
+    ("at 5", "5pm", 17),
+    ("5:00", "7pm", 19),
+    ("at 5", "at 18:00", 18),
+])
+async def test_corrected_time_replaces_ambiguous_reply_and_preserves_date(kind, ambiguous, correction, hour):
+    initial = "Fictional meeting next week" if kind == "event" else "Show calendar next week at 5"
+    update, context = make_update(initial)
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Fictional meeting")) as model, \
+         patch("handlers.google.calendar.create_event") as create, \
+         patch("handlers.google.calendar.events_for_range", return_value=[]) as read:
+        for reply in [initial, "Friday", ambiguous]:
+            update.message.text = reply
+            await handle_message(update, context)
+            assert not recent() and not context.application.bot_data
+            assert "reply_markup" not in update.message.reply_text.call_args.kwargs
+            read.assert_not_called()
+            create.assert_not_called()
+        values = context.user_data["pending_date_clarification"]["values"]
+        assert values.date == "Friday" and values.clock == ambiguous
+        update.message.text = correction
+        await handle_message(update, context)
+        create.assert_not_called()
+    assert not context.user_data
+    if kind == "event":
+        model.assert_called_once()
+        read.assert_not_called()
+        expected = f"2026-11-06T{hour:02}:00:00-05:00"
+        row = recent()[0]
+        assert row["event_dt"] == expected
+        assert context.application.bot_data[f"pending_cal_{row['id']}"]["event_dt"] == expected
+        markup = update.message.reply_text.call_args.kwargs["reply_markup"]
+        assert markup.inline_keyboard[0][0].callback_data == f"cal_add:{row['id']}"
+    else:
+        model.assert_not_called()
+        read.assert_called_once()
+        start, end = read.call_args.args
+        assert start.isoformat() == "2026-11-06T00:00:00-05:00"
+        assert end.isoformat() == "2026-11-07T00:00:00-05:00"
+        assert f"{hour - 12:02}:00 PM EST" in update.message.reply_text.call_args.args[0]
+        assert not recent() and not context.application.bot_data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["event", "query"])
+async def test_date_correction_retains_clock_and_zone_from_previous_reply(kind):
+    initial = "Fictional meeting next week" if kind == "event" else "Show calendar next week at 5"
+    update, context = make_update(initial)
+    with patch("handlers.capture.classify", return_value=Classified(type="event")), \
+         patch("handlers.google.calendar.events_for_range", return_value=[]) as read, \
+         patch("handlers.google.calendar.create_event") as create:
+        for reply in [initial, "at 5 EST", "7pm", "Friday"]:
+            update.message.text = reply
+            await handle_message(update, context)
+        create.assert_not_called()
+    assert not context.user_data
+    if kind == "event":
+        assert recent()[0]["event_dt"] == "2026-11-06T19:00:00-05:00"
+        assert update.message.reply_text.call_args.kwargs["reply_markup"]
+    else:
+        read.assert_called_once()
+        assert "07:00 PM EST" in update.message.reply_text.call_args.args[0]

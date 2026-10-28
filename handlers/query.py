@@ -60,16 +60,17 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, 
 
 
 async def _calendar_query(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, *, now=None, answer=""
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, *, now=None, values=None
 ) -> None:
     from handlers.google import calendar as cal
 
     reference = dates.local_reference(now)
+    values = values if values is not None else dates.ClarificationValues()
     try:
-        span = dates.resolve_query(text, reference, answer=answer)
+        span = dates.resolve_query(text, reference, answer=values.answer(text, reference))
     except dates.ClarificationNeeded as exc:
         await clarification.ask(update, context, kind="query", text=text,
-                                now=reference, question=str(exc), answer=answer)
+                                now=reference, question=str(exc), values=values)
         return
 
     clarification.take(context)

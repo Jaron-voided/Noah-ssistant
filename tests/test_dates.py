@@ -175,3 +175,35 @@ def test_date_reply_preserves_an_explicit_iso_offset(resolver):
     result = resolver("Meeting 2026-11-01T01:30:00-04:00 or 2026-11-02", answer="2026-11-01")
     value = result.at.isoformat() if isinstance(result, dates.DateSpan) else result
     assert value == "2026-11-01T01:30:00-04:00"
+
+
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+@pytest.mark.parametrize("replies, expected", [
+    (["2026-11-01T01:30:15-04:00", "2026-11-02"], "2026-11-02T01:30:15-04:00"),
+    (["2026-11-01T01:30:00-04:00", "7pm"], "2026-11-01T18:00:00-05:00"),
+    (["2026-11-01T10:30:00", "2026-11-02"], "2026-11-02T10:30:00-05:00"),
+    (["Friday at 5", "7pm"], "2026-11-06T19:00:00-05:00"),
+    (["Friday at 5 EST", "all day"], "2026-11-06"),
+])
+def test_structured_replies_preserve_other_components(resolver, replies, expected):
+    original = "Meeting next week"
+    values = dates.ClarificationValues()
+    for reply in replies:
+        values = values.replace_from(reply)
+    result = resolver(original, NOW, answer=values.answer(original, NOW))
+    value = (result.at.isoformat() if result.at else result.start.isoformat()) if isinstance(result, dates.DateSpan) else result
+    # Offset-bearing ISO input denotes an instant; the result is displayed locally.
+    if "T" in expected:
+        expected = datetime.fromisoformat(expected).astimezone(ET).isoformat()
+    assert value == expected
+
+
+@pytest.mark.parametrize("reply", [
+    "2026-11-01T01:30:00-04:00 EST",
+    "2026-11-01T01:30:00-04:00 or 7pm",
+])
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_structured_reply_does_not_discard_conflicting_iso_components(reply, resolver):
+    values = dates.ClarificationValues().replace_from(reply)
+    with pytest.raises(dates.ClarificationNeeded):
+        resolver("Meeting next week", NOW, answer=values.answer("Meeting next week", NOW))

@@ -86,7 +86,9 @@ Telegram long polling
   by UTC round-trip for both folds; missing times are rejected and repeated times require
   an abbreviation/offset. Default event duration is one elapsed hour across clock changes.
 - `handlers/date_clarification.py`: per-user, in-memory event/query clarification state,
-  with original text/classification/clock and accumulated replies. Clarifications expire
+  with original text/classification/clock and separate date, clock, and timezone replies.
+  A correction replaces only the supplied components; ambiguous earlier replies do not
+  override corrections. Clarifications expire
   after ten minutes; cancel discards them. Partial events are not saved or offered for
   Calendar addition until resolved. This state never authorizes a Calendar write.
 - `db/store.py`: parameterized SQLite save/search/recent operations. Query classifications
