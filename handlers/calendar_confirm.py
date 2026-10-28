@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 async def _edit_result(query, text: str) -> None:
     try:
         # Plain text avoids interpreting untrusted event titles as Markdown.
-        await query.edit_message_text(text)
+        await query.edit_message_text(text, parse_mode=None)
     except TelegramError:
         # The Calendar request may already have succeeded. Never invite a retry
         # merely because Telegram could not display the result, or log its data.

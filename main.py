@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import (
@@ -32,6 +33,28 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
 
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Log diagnostic locations, never updates, locals, or exception messages.
+
+    Transport exceptions may contain token-bearing URLs or private API data;
+    ordinary exc_info/traceback formatting would include that exception text.
+    """
+    error = context.error
+    frames = []
+    tb = error.__traceback__ if error is not None else None
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        frames.append(f"{Path(code.co_filename).name}:{tb.tb_lineno}:{code.co_name}")
+        tb = tb.tb_next
+    kind = "background"
+    update_id = None
+    if isinstance(update, Update):
+        update_id = update.update_id
+        kind = "callback" if update.callback_query is not None else "message" if update.message is not None else "other"
+    log.error("Unhandled bot error: type=%s update_id=%s kind=%s stack=%s",
+              type(error).__name__, update_id, kind, " -> ".join(frames[-12:]) or "unavailable")
+
+
 @auth
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -45,7 +68,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/drive <text or link> — preview a Drive save\n"
         "Send a photo — preview a confirmed Drive upload; caption meme or fitness to sort\n"
         "/help  — this message"
-        "\nFind <keywords> — search saved captures"
+        "\nFind <keywords> — search saved captures",
+        parse_mode=None,
     )
 
 
@@ -67,6 +91,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 def main() -> None:
     init_db()
     app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    app.add_error_handler(on_error)
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_start))
     app.add_handler(CommandHandler("today", cmd_today))

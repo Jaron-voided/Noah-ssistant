@@ -14,6 +14,17 @@ after you review and confirm each proposed write.
   calendar. Relative dates use the configured local timezone (default
   `America/New_York`); ambiguous dates prompt for clarification. A dated event
   shows its resolved time and offers **Add to Calendar** or **Skip**.
+  Date corrections can be standalone or full messages. `Saturday` means the next
+  upcoming Saturday (including today if its event time is still ahead); `next Saturday`
+  means Saturday of the following Monday–Sunday week. Month/day dates such as
+  `11-12`, `11/12`, or `November 12` use the current local year, or an already explicit
+  year; inferred past event dates prompt for a year. Full dates prefer `MM-DD-YYYY`;
+  ISO dates remain accepted. Two-digit years mean 2000–2099. A date correction must
+  agree with the established weekday; explicitly give a new weekday to change it.
+  `Today` and `tonight` use the current local date; event captures still need a time
+  or an explicit all-day choice. Without a time, a tonight query reads that local day.
+  Common tomorrow typos are normalized. After four unsuccessful replies, Noah closes the
+  clarification and asks for a complete message with an explicit date/time.
 - **Google Tasks:** task captures show the proposed title and notes before
   **Add to Google Tasks** or **Skip**. `/tasks` lists up to 20 open tasks from
   the default list. Date words remain notes; task due dates and reminders are

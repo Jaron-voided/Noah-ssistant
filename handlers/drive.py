@@ -28,7 +28,7 @@ async def command_add(update, context):
     if text is None:
         text = (update.message.text or "").partition(" ")[2].strip()
     if not text:
-        await update.message.reply_text("Use /drive https://example.com or Drive: Fictional orchid notes. I will preview the save.")
+        await update.message.reply_text("Use /drive https://example.com or Drive: Fictional orchid notes. I will preview the save.", parse_mode=None)
         return
     url = _URL.search(text)
     category = "Links" if url else "Notes"
@@ -40,7 +40,7 @@ async def command_add(update, context):
                f"Folder: My Drive / Noah Inbox / {category}\nFile: {name}\n\n{text}\n\n"
                "Creates the folders if missing and a new plain-text file. Does not fetch links or change sharing.")
     if len(preview.encode("utf-16-le")) // 2 > 4000:
-        await update.message.reply_text(f"Saved locally (#{row_id}). Too long for a complete Drive preview; send shorter text. Nothing uploaded.")
+        await update.message.reply_text(f"Saved locally (#{row_id}). Too long for a complete Drive preview; send shorter text. Nothing uploaded.", parse_mode=None)
         return
     key = f"pending_drive_{row_id}"
     context.application.bot_data[key] = {"name": name, "content": text, "category": category}
@@ -49,7 +49,7 @@ async def command_add(update, context):
         InlineKeyboardButton("✗ Skip", callback_data=f"drive_skip:{row_id}"),
     ]])
     try:
-        await update.message.reply_text(preview, reply_markup=keyboard,
+        await update.message.reply_text(preview, reply_markup=keyboard, parse_mode=None,
                                         link_preview_options=LinkPreviewOptions(is_disabled=True))
     except TelegramError:
         context.application.bot_data.pop(key, None)
@@ -58,7 +58,7 @@ async def command_add(update, context):
 
 async def _edit(query, text):
     try:
-        await query.edit_message_text(text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        await query.edit_message_text(text, parse_mode=None, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except TelegramError:
         log.warning("Drive result reply could not be delivered; check Drive before another save.")
 

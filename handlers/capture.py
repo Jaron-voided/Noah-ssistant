@@ -15,30 +15,23 @@ from llm.classifier import Classified, ClassifierError, classify
 _ICONS = {"note": "📝", "link": "🔗", "event": "📅", "task": "✅", "image": "🖼️"}
 
 
-def _md_safe(text: str) -> str:
-    """Escape MarkdownV1 special characters in user-provided text."""
-    for ch in ("*", "_", "`", "["):
-        text = text.replace(ch, f"\\{ch}")
-    return text
-
-
 def _confirm(result: Classified, row_id: int) -> str:
     icon = _ICONS.get(result.type, "💾")
-    lines = [f"{icon} Saved as **{result.type}**"]
+    lines = [f"{icon} Saved as {result.type}"]
     if result.title:
-        lines.append(f"Title: {_md_safe(result.title)}")
+        lines.append(f"Title: {result.title}")
     if result.url:
-        lines.append(f"URL: {_md_safe(result.url)}")
+        lines.append(f"URL: {result.url}")
     if result.description:
-        lines.append(f"Note: {_md_safe(result.description)}")
-    lines.append(f"_(#{row_id})_")
+        lines.append(f"Note: {result.description}")
+    lines.append(f"(#{row_id})")
     return "\n".join(lines)
 
 
 def _event_prompt(result: Classified, row_id: int) -> str:
-    lines = [f"📅 Saved as **event** _(#{row_id})_"]
+    lines = [f"📅 Saved as event (#{row_id})"]
     if result.title:
-        lines.append(_md_safe(result.title))
+        lines.append(result.title)
     if result.event_dt:
         lines.append(format_iso_dt(result.event_dt))
     lines.append("")
@@ -54,18 +47,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     reference = dates.now_local()
     pending = clarification.take(context)
     if text.lower() == "cancel":
-        await update.message.reply_text("Date clarification cancelled." if pending else "Nothing to clarify.")
+        await update.message.reply_text("Date clarification cancelled." if pending else "Nothing to clarify.", parse_mode=None)
         return
     if pending and clarification.expired(pending, reference):
-        await update.message.reply_text("That clarification expired. Please resend the full message.")
+        await update.message.reply_text("That clarification expired. Please resend the full message.", parse_mode=None)
         return
 
     values = dates.ClarificationValues()
+    attempts = pending.get("attempts", 0) + 1 if pending else 0
     if pending:
         values = pending["values"].replace_from(text)
         text, reference = pending["text"], pending["now"]
         if pending["kind"] == "query":
-            await query_handler._calendar_query(update, context, text, now=reference, values=values)
+            await query_handler._calendar_query(update, context, text, now=reference, values=values, attempts=attempts)
             return
         result = pending["result"]
     else:
@@ -78,7 +72,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         task_text = tasks_handler.explicit_task(text)
         if task_text is not None:
             if not task_text:
-                await update.message.reply_text("Use Task: Buy fictional index cards. Nothing added.")
+                await update.message.reply_text("Use Task: Buy fictional index cards. Nothing added.", parse_mode=None)
                 return
             text = task_text
             result = Classified(type="task", title=text[:1024])
@@ -89,7 +83,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             try:
                 result = await asyncio.to_thread(classify, text, now=reference)
             except ClassifierError as exc:
-                await update.message.reply_text(f"⚠️ Could not classify your message: {exc}")
+                await update.message.reply_text(f"⚠️ Could not classify your message: {exc}", parse_mode=None)
                 return
 
         if result.type == "query":
@@ -102,7 +96,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except dates.ClarificationNeeded as exc:
             await clarification.ask(
                 update, context, kind="event", text=text, now=reference,
-                question=str(exc), result=result, values=values,
+                question=str(exc), result=result, values=values, attempts=attempts,
             )
             return
         result = result.model_copy(update={"event_dt": resolved})
@@ -132,7 +126,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text(
             _event_prompt(result, row_id),
             reply_markup=keyboard,
-            parse_mode="Markdown",
+            parse_mode=None,
         )
     else:
-        await update.message.reply_text(_confirm(result, row_id), parse_mode="Markdown")
+        await update.message.reply_text(_confirm(result, row_id), parse_mode=None)

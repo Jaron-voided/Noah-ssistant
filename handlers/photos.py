@@ -50,7 +50,7 @@ async def handle_photo(update, context):
                           metadata={"source": "telegram_photo", "category": category}))
     # No image bytes, Telegram file IDs or model-generated labels go into SQLite.
     if photo.file_size and photo.file_size > MAX_PHOTO_BYTES:
-        await update.message.reply_text(f"Image saved locally as metadata (#{row_id}). Demo photo limit is 10 MiB; nothing uploaded.")
+        await update.message.reply_text(f"Image saved locally as metadata (#{row_id}). Demo photo limit is 10 MiB; nothing uploaded.", parse_mode=None)
         return
     name = f"noah-image-{row_id}.jpg"
     target = "Noah Inbox / Images" + (f" / {category}" if category else "")
@@ -60,7 +60,7 @@ async def handle_photo(update, context):
                f"Caption: {caption or '(none)'}\n\n"
                "Save creates missing folders and uploads the Telegram JPEG. No visual analysis or sharing changes.")
     if len(preview.encode("utf-16-le")) // 2 > 1000:
-        await update.message.reply_text(f"Image metadata saved locally (#{row_id}). Caption is too long for a complete preview; resend with a shorter caption. Nothing uploaded.")
+        await update.message.reply_text(f"Image metadata saved locally (#{row_id}). Caption is too long for a complete preview; resend with a shorter caption. Nothing uploaded.", parse_mode=None)
         return
     key = f"pending_photo_{row_id}"
     context.application.bot_data[key] = {
@@ -72,7 +72,7 @@ async def handle_photo(update, context):
     ]])
     try:
         # Reuse Telegram's cached file for the preview; do not download photo bytes.
-        await update.message.reply_photo(photo=photo.file_id, caption=preview, reply_markup=keyboard)
+        await update.message.reply_photo(photo=photo.file_id, caption=preview, reply_markup=keyboard, parse_mode=None)
     except TelegramError:
         context.application.bot_data.pop(key, None)
         log.warning("Photo preview could not be delivered; no download or Drive upload attempted.")
@@ -81,7 +81,7 @@ async def handle_photo(update, context):
 async def _edit(query, text):
     try:
         # Photo previews need caption edits, not edit_message_text.
-        await query.edit_message_caption(caption=text)
+        await query.edit_message_caption(caption=text, parse_mode=None)
     except TelegramError:
         log.warning("Photo result reply could not be delivered; check Drive before another upload.")
 

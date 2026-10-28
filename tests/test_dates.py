@@ -35,9 +35,9 @@ def test_event_dates_use_fixed_local_clock(message, expected):
 
 @pytest.mark.parametrize("message", [
     "Meeting tomorrow at 5", "Meeting this Friday", "Meeting next week at 5pm",
-    "Meeting Friday at 5pm", "Meeting next Friday at 5pm", "Meeting April 3rd at 10am",
+    "Meeting April 3rd at 10am",
     "Meeting tomorrow at 5pm or 6pm", "Meeting tomorrow or 2026-12-01 at 5pm",
-    "Meeting 11/12 at 5pm", "Meeting tomorrow evening", "Meeting tomorrow at 5pm PST",
+    "Meeting tomorrow evening", "Meeting tomorrow at 5pm PST",
     "All-day meeting tomorrow at 5pm", "Meeting today at 10am",
     "Meeting 2026-02-30 at 5pm", "Meeting this Monday at 5pm",
     "Meeting tomorrow next month at 5pm", "Meeting tomorrow at 25:00",
@@ -138,7 +138,7 @@ def test_dst_week_bounds_are_local_mondays_not_168_elapsed_hours(clock, expected
     assert elapsed.total_seconds() / 3600 == expected_hours
 
 
-@pytest.mark.parametrize("message", ["What's on my calendar?", "Show calendar next month", "Show calendar Friday"])
+@pytest.mark.parametrize("message", ["What's on my calendar?", "Show calendar next month"])
 def test_vague_query_does_not_default_to_today(message):
     with pytest.raises(dates.ClarificationNeeded):
         dates.resolve_query(message)
@@ -207,3 +207,130 @@ def test_structured_reply_does_not_discard_conflicting_iso_components(reply, res
     values = dates.ClarificationValues().replace_from(reply)
     with pytest.raises(dates.ClarificationNeeded):
         resolver("Meeting next week", NOW, answer=values.answer("Meeting next week", NOW))
+
+
+@pytest.mark.parametrize("spelling", ["tonmorow", "tomorow", "tommorow", "tommorrow", "TONMOROW"])
+def test_common_tomorrow_typos_use_original_local_clock(spelling):
+    assert dates.has_date_language(spelling)
+    assert dates.resolve_event(f"Meeting {spelling} at 5pm") == "2026-10-28T17:00:00-04:00"
+    assert dates.resolve_query(f"Show calendar {spelling}").start.isoformat() == "2026-10-28"
+
+
+@pytest.mark.parametrize("numeric", ["10/29/26", "10/29/2026", "29/10/26"])
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_unambiguous_numeric_dates_in_full_messages(numeric, resolver):
+    result = resolver(f"Meeting {numeric} 5pm")
+    value = result.at.isoformat() if isinstance(result, dates.DateSpan) else result
+    assert value == "2026-10-29T17:00:00-04:00"
+
+
+@pytest.mark.parametrize("numeric", ["02/30/26", "13/32/26", "10/29/2026 tomorrow"])
+def test_numeric_dates_do_not_guess_ambiguous_missing_or_invalid_values(numeric):
+    with pytest.raises(dates.ClarificationNeeded):
+        dates.resolve_event(f"Meeting {numeric} 5pm")
+
+
+@pytest.mark.parametrize("phrase, expected", [
+    ("Saturday", "2026-10-31T12:00:00-04:00"),
+    ("next Saturday", "2026-11-07T12:00:00-05:00"),
+    ("Monday", "2026-11-02T12:00:00-05:00"),
+    ("Friday", "2026-10-30T12:00:00-04:00"),
+])
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_natural_weekdays(phrase, expected, resolver):
+    result = resolver(f"Dinner {phrase} at Noon", NOW.replace(day=28))
+    assert (result.at.isoformat() if isinstance(result, dates.DateSpan) else result) == expected
+
+
+@pytest.mark.parametrize("clock, phrase, expected", [
+    ("2026-12-31T12:00:00-05:00", "Saturday", "2027-01-02T12:00:00-05:00"),
+    ("2026-12-31T12:00:00-05:00", "next Saturday", "2027-01-09T12:00:00-05:00"),
+    ("2026-10-31T10:00:00-04:00", "Saturday", "2026-10-31T12:00:00-04:00"),
+    ("2026-10-31T13:00:00-04:00", "Saturday", "2026-11-07T12:00:00-05:00"),
+    ("2026-11-01T10:00:00-05:00", "next Saturday", "2026-11-07T12:00:00-05:00"),
+    ("2027-01-04T10:00:00-05:00", "next Saturday", "2027-01-16T12:00:00-05:00"),
+])
+def test_weekday_boundaries_and_same_day(clock, phrase, expected):
+    assert dates.resolve_event(f"Dinner {phrase} at noon", datetime.fromisoformat(clock)) == expected
+
+
+@pytest.mark.parametrize("phrase", ["11-12", "11/12", "November 12", "Nov 12th", "11-12-2026", "11/12/2026"])
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_month_day_formats_default_current_year(phrase, resolver):
+    result = resolver(f"Dinner {phrase} at noon")
+    assert (result.at.isoformat() if isinstance(result, dates.DateSpan) else result) == "2026-11-12T12:00:00-05:00"
+
+
+@pytest.mark.parametrize("phrase", ["01-02", "01/02", "January 2", "10-27"])
+def test_inferred_year_in_past_requires_clarification(phrase):
+    with pytest.raises(dates.ClarificationNeeded, match="Which year"):
+        dates.resolve_event(f"Dinner {phrase} at noon")
+
+
+@pytest.mark.parametrize("clock, phrase, expected", [
+    ("2026-12-31T12:00:00-05:00", "January 2 2027", "2027-01-02T12:00:00-05:00"),
+    ("2027-01-01T02:00:00+00:00", "12/31 at 11pm", "2026-12-31T23:00:00-05:00"),
+    ("2027-01-01T12:00:00-05:00", "12-31-2026", "2026-12-31T12:00:00-05:00"),
+    ("2028-01-01T12:00:00-05:00", "February 29", "2028-02-29T12:00:00-05:00"),
+])
+def test_explicit_year_and_local_year_are_preserved(clock, phrase, expected):
+    suffix = "" if "pm" in phrase else " at noon"
+    assert dates.resolve_event(f"Dinner {phrase}{suffix}", datetime.fromisoformat(clock)) == expected
+
+
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+@pytest.mark.parametrize("correction", ["2026-10-30", "10-30-2026", "10/30", "2026-10-30T12:00:00-04:00"])
+def test_date_only_correction_cannot_discard_original_saturday(resolver, correction):
+    with pytest.raises(dates.ClarificationNeeded, match="not Saturday"):
+        resolver("Dinner Saturday at noon", NOW.replace(day=28), answer=correction)
+
+
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_explicit_weekday_correction_can_replace_original_weekday(resolver):
+    result = resolver("Dinner Saturday at noon", NOW, answer="Friday 10-30-2026")
+    assert (result.at.isoformat() if isinstance(result, dates.DateSpan) else result) == "2026-10-30T12:00:00-04:00"
+
+
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_structured_date_replies_keep_weekday_and_explicit_year(resolver):
+    values = dates.ClarificationValues().replace_from("Saturday November 7 2026")
+    values = values.replace_from("11-14")
+    answer = values.answer("Dinner at noon", NOW)
+    result = resolver("Dinner at noon", NOW, answer=answer)
+    assert (result.at.isoformat() if isinstance(result, dates.DateSpan) else result) == "2026-11-14T12:00:00-05:00"
+    values = values.replace_from("11-13")
+    with pytest.raises(dates.ClarificationNeeded, match="not Saturday"):
+        resolver("Dinner at noon", NOW, answer=values.answer("Dinner at noon", NOW))
+
+
+def test_correction_without_year_keeps_original_explicit_year():
+    assert dates.resolve_event("Dinner 11-12-2027 at noon", NOW, answer="11-13") == "2027-11-13T12:00:00-05:00"
+    values = dates.ClarificationValues().replace_from("11-12-2027").replace_from("11/13")
+    assert dates.resolve_event("Dinner at noon", NOW, answer=values.answer("Dinner at noon", NOW)) == "2027-11-13T12:00:00-05:00"
+
+
+@pytest.mark.parametrize("word", ["tonight", "today", "TONIGHT"])
+@pytest.mark.parametrize("resolver", [dates.resolve_event, dates.resolve_query])
+def test_today_and_tonight_at_explicit_time_use_local_date(word, resolver):
+    result = resolver(f"Dinner {word} at 7pm", NOW)
+    assert (result.at.isoformat() if isinstance(result, dates.DateSpan) else result) == "2026-10-27T19:00:00-04:00"
+
+
+@pytest.mark.parametrize("text", ["Dinner tonight", "Dinner tonight at 7"])
+def test_tonight_does_not_invent_time_or_am_pm(text):
+    with pytest.raises(dates.ClarificationNeeded, match="What time|AM or PM"):
+        dates.resolve_event(text, NOW)
+
+
+@pytest.mark.parametrize("word", ["tonight", "today"])
+@pytest.mark.parametrize("in_reply", [False, True])
+def test_same_day_past_times_require_clarification_in_original_and_reply(word, in_reply):
+    text, answer = ("Dinner at 10am", word) if in_reply else (f"Dinner {word} at 10am", "")
+    with pytest.raises(dates.ClarificationNeeded, match="already passed"):
+        dates.resolve_event(text, NOW, answer=answer)
+
+
+def test_tonight_at_year_boundary_uses_local_date_not_utc_date():
+    clock = datetime.fromisoformat("2027-01-01T02:00:00+00:00")
+    assert dates.resolve_event("Dinner tonight at 11pm", clock) == "2026-12-31T23:00:00-05:00"
+    assert dates.resolve_query("Show calendar tonight", clock).start.isoformat() == "2026-12-31"

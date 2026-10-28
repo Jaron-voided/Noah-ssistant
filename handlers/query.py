@@ -43,12 +43,13 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, 
     if keywords is None:
         await update.message.reply_text(
             "Search saved captures with Find <keywords>, Search for <keywords>, or Look for <keywords>. "
-            "Search matches raw text and titles; date filters and semantic search are not supported yet."
+            "Search matches raw text and titles; date filters and semantic search are not supported yet.",
+            parse_mode=None,
         )
         return
     hits = search(keywords, limit=5)
     if not hits:
-        await update.message.reply_text("Nothing found for that query.")
+        await update.message.reply_text("Nothing found for that query.", parse_mode=None)
         return
 
     lines = ["Here's what I found:\n"]
@@ -56,11 +57,11 @@ async def handle(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, 
         icon = _ICONS.get(h["type"], "💾")
         label = h["title"] or h["raw"][:60]
         lines.append(f"{icon} {label}")
-    await update.message.reply_text("\n".join(lines))
+    await update.message.reply_text("\n".join(lines), parse_mode=None)
 
 
 async def _calendar_query(
-    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, *, now=None, values=None
+    update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, *, now=None, values=None, attempts=0
 ) -> None:
     from handlers.google import calendar as cal
 
@@ -70,7 +71,7 @@ async def _calendar_query(
         span = dates.resolve_query(text, reference, answer=values.answer(text, reference))
     except dates.ClarificationNeeded as exc:
         await clarification.ask(update, context, kind="query", text=text,
-                                now=reference, question=str(exc), values=values)
+                                now=reference, question=str(exc), values=values, attempts=attempts)
         return
 
     clarification.take(context)
@@ -84,11 +85,11 @@ async def _calendar_query(
         events = [cal.format_event(event) for event in raw_events]
         header = f"📅 Calendar: {dates.describe_span(span)}"
         body = "\n".join(events) if events else "Nothing scheduled."
-        await update.message.reply_text(f"{header}\n{body}")
+        await update.message.reply_text(f"{header}\n{body}", parse_mode=None)
 
     except (AuthorizationRequired, PrivatePathError) as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), parse_mode=None)
     except FileNotFoundError:
-        await update.message.reply_text("Google Calendar isn't set up. Existing authorization settings were preserved.")
+        await update.message.reply_text("Google Calendar isn't set up. Existing authorization settings were preserved.", parse_mode=None)
     except Exception:
-        await update.message.reply_text("Could not read Google Calendar. Please check its setup and try again.")
+        await update.message.reply_text("Could not read Google Calendar. Please check its setup and try again.", parse_mode=None)

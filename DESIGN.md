@@ -66,6 +66,8 @@ Telegram long polling
 - `main.py`: bot entry point; initializes SQLite and registers command, text, and
   Calendar callback handlers. Uses `asyncio.Runner` with
   `run_polling(drop_pending_updates=True, close_loop=False)` for polling lifecycle compatibility.
+  Registers an error handler logging exception type, update ID/type, and stack
+  filenames/lines/functions, without raw exception text, update contents, or locals.
 - `handlers/auth_guard.py`: allows only `TELEGRAM_USER_ID`. Applied to entry-point
   commands/text and Calendar callbacks. Unauthorized users receive no reply; the
   guard currently logs their numeric user ID. Silent rejection means no bot response.
@@ -85,10 +87,18 @@ Telegram long polling
   resolution. Missing/ambiguous values require clarification. DST wall times are checked
   by UTC round-trip for both folds; missing times are rejected and repeated times require
   an abbreviation/offset. Default event duration is one elapsed hour across clock changes.
+  Bare weekdays select the upcoming occurrence; next weekdays select the following
+  Monday–Sunday week. Named month/day and MM-DD/MM/DD dates infer the local current
+  year unless a year was explicitly established. Inferred past event dates ask for a
+  year; historical Calendar reads remain supported. Explicit dates and corrections
+  must agree with an established weekday unless the user explicitly changes that weekday.
 - `handlers/date_clarification.py`: per-user, in-memory event/query clarification state,
   with original text/classification/clock and separate date, clock, and timezone replies.
   A correction replaces only the supplied components; ambiguous earlier replies do not
-  override corrections. Clarifications expire
+  override corrections. Full-message and standalone date corrections use the same
+  parser, including unambiguous slash dates and a narrow list of tomorrow typos.
+  Four unsuccessful replies close the clarification with explicit resend guidance.
+  Clarifications expire
   after ten minutes; cancel discards them. Partial events are not saved or offered for
   Calendar addition until resolved. This state never authorizes a Calendar write.
 - `db/store.py`: parameterized SQLite save/search/recent operations. Query classifications
@@ -111,6 +121,8 @@ Telegram long polling
   Skip does not write. Pending data is consumed before insertion or result-reply awaits.
   Repeated/overlapping Add/Skip callbacks cannot reuse it, and duplicate taps leave the
   first reply intact. Errors do not restore pending state or invite automatic retries.
+  All text/photo previews, queries, clarification replies, and callback edits explicitly
+  set `parse_mode=None`, preserving literal dynamic content even with PTB defaults.
   Replies use plain text and sanitized errors; Telegram reply failures do not retry
   a Calendar operation. Pending state is in `application.bot_data`, not persisted,
   so restart invalidates buttons. This is not cross-process/network idempotency.

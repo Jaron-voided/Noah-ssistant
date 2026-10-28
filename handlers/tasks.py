@@ -30,7 +30,7 @@ def explicit_task(text):
 async def command_add(update, context):
     text = (update.message.text or "").partition(" ")[2].strip()
     if not text:
-        await update.message.reply_text("Use /task Buy fictional index cards. I will preview it before adding anything.")
+        await update.message.reply_text("Use /task Buy fictional index cards. I will preview it before adding anything.", parse_mode=None)
         return
     row_id = save(Capture(type="task", raw=text, title=text[:1024]))
     await preview(update, context, title=text[:1024], notes=text, row_id=row_id)
@@ -43,7 +43,7 @@ async def preview(update, context, *, title, notes, row_id):
     if len(title) > 1024 or len(notes) > 2500 or len(text.encode("utf-16-le")) // 2 > 4000:
         await update.message.reply_text(
             f"Saved locally as task (#{row_id}). Too long for a complete task preview; "
-            "send a shorter task (up to 2500 characters). Nothing added to Google Tasks."
+            "send a shorter task (up to 2500 characters). Nothing added to Google Tasks.", parse_mode=None,
         )
         return
     keyboard = InlineKeyboardMarkup([[
@@ -53,7 +53,7 @@ async def preview(update, context, *, title, notes, row_id):
     key = f"pending_task_{row_id}"
     context.application.bot_data[key] = {"title": title, "notes": notes}
     try:
-        await update.message.reply_text(text, reply_markup=keyboard,
+        await update.message.reply_text(text, reply_markup=keyboard, parse_mode=None,
                                         link_preview_options=LinkPreviewOptions(is_disabled=True))
     except TelegramError:
         context.application.bot_data.pop(key, None)
@@ -62,7 +62,7 @@ async def preview(update, context, *, title, notes, row_id):
 
 async def _edit(query, text):
     try:
-        await query.edit_message_text(text, link_preview_options=LinkPreviewOptions(is_disabled=True))
+        await query.edit_message_text(text, parse_mode=None, link_preview_options=LinkPreviewOptions(is_disabled=True))
     except TelegramError:
         log.warning("Task result reply could not be delivered; check Tasks before another addition.")
 
@@ -110,10 +110,10 @@ async def command_list(update, context):
     try:
         tasks, more = await asyncio.to_thread(api.list_open_tasks)
     except (TasksAuthorizationRequired, PrivatePathError) as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), parse_mode=None)
         return
     except Exception:
-        await update.message.reply_text("Could not read Google Tasks. Check API access and setup privately, then try again.")
+        await update.message.reply_text("Could not read Google Tasks. Check API access and setup privately, then try again.", parse_mode=None)
         return
     lines = ["✅ Open tasks — default Google Tasks list (up to 20)"]
     for task in tasks:
@@ -125,4 +125,4 @@ async def command_list(update, context):
         lines.append("No open tasks in this list.")
     if more:
         lines.append("More tasks exist. Open Google Tasks to see the rest.")
-    await update.message.reply_text("\n".join(lines), link_preview_options=LinkPreviewOptions(is_disabled=True))
+    await update.message.reply_text("\n".join(lines), parse_mode=None, link_preview_options=LinkPreviewOptions(is_disabled=True))

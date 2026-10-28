@@ -356,3 +356,257 @@ async def test_date_correction_retains_clock_and_zone_from_previous_reply(kind):
     else:
         read.assert_called_once()
         assert "07:00 PM EST" in update.message.reply_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reply", ["Meeting 10/29/26 5pm", "10/29/26 5pm", "Meeting 2026-10-29 5pm"])
+async def test_october_28_telegram_typo_then_explicit_date_recovers(reply, monkeypatch):
+    monkeypatch.setattr(dates, "now_local", lambda: NOW.replace(day=28))
+    update, context = make_update("Meeting tonmorow")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Meeting", description="Original details")) as model, \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+        assert not recent() and not context.application.bot_data
+        # Typo support now resolves tomorrow, but a time must still be supplied.
+        assert "What time" in update.message.reply_text.call_args.args[0]
+        update.message.text = reply
+        await handle_message(update, context)
+        create.assert_not_called()
+    model.assert_called_once()
+    row = recent()[0]
+    assert row["raw"] == "Meeting tonmorow" and row["title"] == "Meeting"
+    assert row["event_dt"] == "2026-10-29T17:00:00-04:00"
+    pending = context.application.bot_data[f"pending_cal_{row['id']}"]
+    assert pending["description"] == "Original details"
+    assert update.message.reply_text.call_args.kwargs["reply_markup"].inline_keyboard[0][0].callback_data == f"cal_add:{row['id']}"
+    assert not context.user_data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["event", "query"])
+@pytest.mark.parametrize("reply", ["10/29/26", "Meeting 10/29/26", "Meeting 2026-10-29"])
+async def test_date_only_correction_preserves_existing_time_and_title(kind, reply):
+    initial = "Fictional meeting at 5pm" if kind == "event" else "Show calendar at 5pm"
+    update, context = make_update(initial)
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Original title")), \
+         patch("handlers.google.calendar.events_for_range", return_value=[]) as read, \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+        assert "date" in update.message.reply_text.call_args.args[0].lower()
+        update.message.text = reply
+        await handle_message(update, context)
+        create.assert_not_called()
+    assert not context.user_data
+    if kind == "event":
+        assert recent()[0]["event_dt"] == "2026-10-29T17:00:00-04:00"
+        assert recent()[0]["title"] == "Original title"
+    else:
+        read.assert_called_once()
+        assert "2026-10-29" in update.message.reply_text.call_args.args[0]
+        assert "05:00 PM EDT" in update.message.reply_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["event", "query"])
+async def test_unrecognized_replies_end_clarification_without_writes(kind):
+    update, context = make_update("Meeting" if kind == "event" else "Show calendar")
+    with patch("handlers.capture.classify", return_value=Classified(type="event")), \
+         patch("handlers.google.calendar.create_event") as create, \
+         patch("handlers.google.calendar.events_for_range") as read:
+        await handle_message(update, context)
+        for _ in range(4):
+            update.message.text = "still unsure"
+            await handle_message(update, context)
+        create.assert_not_called()
+        read.assert_not_called()
+    assert not context.user_data and not recent() and not context.application.bot_data
+    response = update.message.reply_text.call_args.args[0]
+    assert "clarification is closed" in response and "MM-DD-YYYY" in response
+
+
+@pytest.mark.asyncio
+async def test_invalid_numeric_date_can_be_replaced_by_full_iso_message():
+    update, context = make_update("Meeting at 5pm")
+    with patch("handlers.capture.classify", return_value=Classified(type="event")), \
+         patch("handlers.google.calendar.create_event") as create:
+        for reply in ["Meeting at 5pm", "Meeting 10/32/26", "Meeting 2026-10-29"]:
+            update.message.text = reply
+            await handle_message(update, context)
+            create.assert_not_called()
+            if reply == "Meeting 10/32/26":
+                assert "not valid" in update.message.reply_text.call_args.args[0]
+                assert not recent()
+    assert recent()[0]["event_dt"] == "2026-10-29T17:00:00-04:00"
+    assert not context.user_data
+
+
+@pytest.mark.asyncio
+async def test_reported_full_message_recovers_from_pending_date_question(monkeypatch):
+    from handlers import date_clarification
+
+    clock = NOW.replace(day=28)
+    monkeypatch.setattr(dates, "now_local", lambda: clock)
+    update, context = make_update("Meeting tonmorow")
+    # Reproduce the pending date-question state observed before typo support.
+    await date_clarification.ask(
+        update, context, kind="event", text="Meeting tonmorow", now=clock,
+        question="What date is the event?", result=Classified(type="event", title="Meeting"),
+    )
+    update.message.text = "Meeting 10/29/26 5pm"
+    with patch("handlers.capture.classify") as model, \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+    model.assert_not_called()
+    create.assert_not_called()
+    assert recent()[0]["event_dt"] == "2026-10-29T17:00:00-04:00"
+    assert update.message.reply_text.call_args.kwargs["reply_markup"]
+    assert not context.user_data
+
+
+@pytest.mark.asyncio
+async def test_dinner_saturday_at_noon_gets_friendly_preview_without_date_question(monkeypatch):
+    monkeypatch.setattr(dates, "now_local", lambda: NOW.replace(day=28))
+    update, context = make_update("Dinner Saturday at Noon")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner")), \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+    create.assert_not_called()
+    assert recent()[0]["event_dt"] == "2026-10-31T12:00:00-04:00"
+    response = update.message.reply_text.call_args.args[0]
+    assert "Sat Oct 31, 2026" in response and "12:00 PM EDT" in response
+    assert update.message.reply_text.call_args.kwargs["parse_mode"] is None
+    assert update.message.reply_text.call_args.kwargs["reply_markup"]
+    assert not context.user_data
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["event", "query"])
+@pytest.mark.parametrize("correction", ["10-31", "Saturday 10/31", "Dinner Saturday 10-31-2026"])
+async def test_friday_date_rejected_then_saturday_correction_retains_time(kind, correction, monkeypatch):
+    monkeypatch.setattr(dates, "now_local", lambda: NOW.replace(day=28))
+    # The contradictory initial message must clarify even though each date on
+    # its own is valid. It must not lose Saturday on a subsequent date-only reply.
+    initial = "Dinner Saturday 2026-10-30 at Noon" if kind == "event" else "Show calendar Saturday 2026-10-30 at Noon"
+    update, context = make_update(initial)
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner", description="Original dinner details")), \
+         patch("handlers.google.calendar.create_event") as create, \
+         patch("handlers.google.calendar.events_for_range", return_value=[]) as read:
+        for reply in [initial, "2026-10-30"]:
+            update.message.text = reply
+            await handle_message(update, context)
+            assert "not Saturday" in update.message.reply_text.call_args.args[0]
+            assert not recent() and not context.application.bot_data
+            assert "reply_markup" not in update.message.reply_text.call_args.kwargs
+            create.assert_not_called()
+            read.assert_not_called()
+        update.message.text = correction
+        await handle_message(update, context)
+        create.assert_not_called()
+    assert not context.user_data
+    if kind == "event":
+        assert recent()[0]["event_dt"] == "2026-10-31T12:00:00-04:00"
+        assert recent()[0]["title"] == "Dinner"
+        assert context.application.bot_data[f"pending_cal_{recent()[0]['id']}"]["description"] == "Original dinner details"
+        assert update.message.reply_text.call_args.kwargs["reply_markup"]
+    else:
+        read.assert_called_once()
+        assert "12:00 PM EDT" in update.message.reply_text.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_weekday_learned_in_reply_survives_subsequent_date_correction():
+    update, context = make_update("Dinner")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner")), \
+         patch("handlers.google.calendar.create_event") as create:
+        for reply in ["Dinner", "Saturday", "2026-10-30 at noon"]:
+            update.message.text = reply
+            await handle_message(update, context)
+            create.assert_not_called()
+        assert "not Saturday" in update.message.reply_text.call_args.args[0]
+        assert not recent()
+        update.message.text = "10/31"
+        await handle_message(update, context)
+        create.assert_not_called()
+    assert recent()[0]["event_dt"] == "2026-10-31T12:00:00-04:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("correction", ["01-02-2027", "January 2 2027", "2027"])
+async def test_past_inferred_year_can_be_corrected_at_year_boundary(correction, monkeypatch):
+    clock = datetime(2026, 12, 31, 12, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(dates, "now_local", lambda: clock)
+    update, context = make_update("Dinner January 2 at noon")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner")), \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+        assert "Which year" in update.message.reply_text.call_args.args[0]
+        assert not recent() and not context.application.bot_data
+        update.message.text = correction
+        await handle_message(update, context)
+        create.assert_not_called()
+    assert recent()[0]["event_dt"] == "2027-01-02T12:00:00-05:00"
+    assert not context.user_data
+
+
+@pytest.mark.asyncio
+async def test_corrected_date_only_creates_event_after_explicit_add():
+    from handlers.calendar_confirm import handle_callback
+
+    update, context = make_update("Dinner Saturday 2026-10-30 at Noon")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner")), \
+         patch("handlers.google.calendar.create_event", return_value={}) as create:
+        await handle_message(update, context)
+        create.assert_not_called()
+        update.message.text = "10-31-2026"
+        await handle_message(update, context)
+        create.assert_not_called()
+        row = recent()[0]
+        callback = MagicMock()
+        callback.effective_user.id = config.TELEGRAM_USER_ID
+        callback.callback_query.data = f"cal_add:{row['id']}"
+        callback.callback_query.answer = AsyncMock()
+        callback.callback_query.edit_message_text = AsyncMock()
+        await handle_callback(callback, context)
+        create.assert_called_once_with(summary="Dinner", start_dt="2026-10-31T12:00:00-04:00", description=None)
+
+
+@pytest.mark.asyncio
+async def test_next_saturday_at_year_end_uses_following_week(monkeypatch):
+    clock = datetime(2026, 12, 31, 12, tzinfo=ZoneInfo("America/New_York"))
+    monkeypatch.setattr(dates, "now_local", lambda: clock)
+    update, context = make_update("Dinner next Saturday at noon")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner")), \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+    create.assert_not_called()
+    assert recent()[0]["event_dt"] == "2027-01-09T12:00:00-05:00"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("word", ["tonight", "today"])
+async def test_same_day_capture_asks_for_time_then_previews_without_creating(word):
+    update, context = make_update(f"Dinner {word}")
+    with patch("handlers.capture.classify", return_value=Classified(type="event", title="Dinner")) as model, \
+         patch("handlers.google.calendar.create_event") as create:
+        await handle_message(update, context)
+        assert "What time" in update.message.reply_text.call_args.args[0]
+        assert not recent() and not context.application.bot_data
+        update.message.text = "7pm"
+        await handle_message(update, context)
+        create.assert_not_called()
+    model.assert_called_once()
+    assert recent()[0]["event_dt"] == "2026-10-27T19:00:00-04:00"
+    assert update.message.reply_text.call_args.kwargs["reply_markup"]
+    assert not context.user_data
+
+
+@pytest.mark.asyncio
+async def test_tonight_query_bypasses_classifier_and_reads_current_local_day():
+    update, context = make_update("What's on my calendar tonight?")
+    with patch("handlers.capture.classify") as model, \
+         patch("handlers.google.calendar.events_for_range", return_value=[]) as read:
+        await handle_message(update, context)
+    model.assert_not_called()
+    start, end = read.call_args.args
+    assert start.isoformat() == "2026-10-27T00:00:00-04:00"
+    assert end.isoformat() == "2026-10-28T00:00:00-04:00"
